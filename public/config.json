@@ -1,0 +1,382 @@
+{
+  "imagePreloader": {
+    "images": [
+      "pub-ui/humanConfigStatic/human1/avatar.png",
+      "pub-ui/images/BJ/bg0.gif",
+      "pub-ui/humanConfigStatic/human1/action/normal.png",
+      "pub-ui/humanConfigStatic/human1/action/welcome.png"
+    ]
+  },
+  "banners": [
+    { "img": "pub-ui/images/BJ/banner1.png" },
+    { "img": "pub-ui/images/BJ/banner2.png" }
+  ],
+  "backgrounds": {
+    "default": {
+      "id": "default",
+      "name": "流光幻彩",
+      "nameEn": "default",
+      "background": "pub-ui/images/BJ/bg0.gif"
+    },
+    "style1": {
+      "id": "style1",
+      "name": "中秋节主题",
+      "nameEn": "style1",
+      "background": "pub-ui/images/BJ/bg2.gif"
+    },
+    "style2": {
+      "id": "style2",
+      "name": "智能家居",
+      "nameEn": "style2",
+      "background": "pub-ui/images/BJ/bg3.gif"
+    },
+    "style3": {
+      "id": "style3",
+      "name": "未来商务",
+      "nameEn": "style3",
+      "background": "pub-ui/images/BJ/bg4.png"
+    }
+  },
+  "initBg": "default",
+  "avatars": {
+    "human1": {
+      "id": "human1",
+      "name": "智能客服",
+      "nameEn": "human",
+      "voiceName": "x4_yezi",
+      "avatar": "pub-ui/humanConfigStatic/human1/avatar.png",
+      "actions": {
+        "static": {
+          "name": "静态",
+          "apng": "pub-ui/humanConfigStatic/human1/action/normal.png",
+          "actionShow": false
+        },
+        "welcome": {
+          "name": "欢迎",
+          "apng": "pub-ui/humanConfigStatic/human1/action/human_welcome-speak.png",
+          "actionShow": true
+        },
+        "action": {
+          "name": "默认",
+          "apng": "pub-ui/humanConfigStatic/human1/action/action_main.png",
+          "actionShow": true
+        },
+        "sayHi": {
+          "name": "打招呼",
+          "apng": "pub-ui/humanConfigStatic/human1/action/sayHi.png",
+          "actionShow": true
+        },
+        "speak": {
+          "name": "说话",
+          "apng": "pub-ui/humanConfigStatic/human1/action/speaking.png",
+          "actionShow": true
+        },
+        "speakStatic": {
+          "name": "说话-无动作",
+          "apng": "pub-ui/humanConfigStatic/human1/action/speaking-noaction.png",
+          "actionShow": false
+        },
+        "listen": {
+          "name": "聆听",
+          "apng": "pub-ui/humanConfigStatic/human1/action/listen.png",
+          "actionShow": true
+        },
+        "dance": {
+          "name": "跳舞",
+          "apng": "pub-ui/humanConfigStatic/human1/action/dance.png",
+          "actionShow": true
+        },
+        "finishing": {
+          "name": "成功",
+          "apng": "pub-ui/humanConfigStatic/human1/action/finishing.png",
+          "actionShow": true
+        },
+        "heart": {
+          "name": "比心",
+          "apng": "pub-ui/humanConfigStatic/human1/action/heart.png",
+          "actionShow": true
+        },
+        "happy": {
+          "name": "开心",
+          "apng": "pub-ui/humanConfigStatic/human1/action/happy.png",
+          "actionShow": true
+        },
+        "disappointed": {
+          "name": "失望",
+          "apng": "pub-ui/humanConfigStatic/human1/action/disappointed.png",
+          "actionShow": true
+        },
+        "submitInvoice": {
+          "name": "递发票",
+          "apng": "pub-ui/humanConfigStatic/human1/action/submitInvoice.png",
+          "actionShow": true
+        },
+        "queryData": {
+          "name": "查询数据",
+          "apng": "pub-ui/humanConfigStatic/human1/action/queryData.png",
+          "actionShow": true
+        },
+        "introduceProd": {
+          "name": "介绍产品",
+          "apng": "pub-ui/humanConfigStatic/human1/action/introduceProd.png",
+          "actionShow": true
+        },
+        "tel": {
+          "name": "手机号",
+          "apng": "pub-ui/humanConfigStatic/human1/action/tel.png",
+          "actionShow": true
+        },
+        "chargeRequest": {
+          "name": "充值请求",
+          "apng": "pub-ui/humanConfigStatic/human1/action/speaking.png",
+          "actionShow": false
+        },
+        "telConfirm": {
+          "name": "号码确认",
+          "apng": "pub-ui/humanConfigStatic/human1/action/telConfirm.png",
+          "actionShow": true
+        },
+        "error": {
+          "name": "失败",
+          "apng": "pub-ui/humanConfigStatic/human1/action/error.png",
+          "actionShow": true
+        },
+        "danceStatus": {
+          "name": "跳舞状态",
+          "apng": "pub-ui/humanConfigStatic/human1/action/danceStatus.png",
+          "actionShow": false
+        }
+      }
+    },
+    "human2": {
+      "id": "human2",
+      "name": "小天小天",
+      "nameEn": "cartoon",
+      "voiceName": "x4_lingfeichen_emo",
+      "avatar": "pub-ui/humanConfigStatic/human2/avatar.png",
+      "actions": {
+        "static": {
+          "name": "静态",
+          "apng": "pub-ui/humanConfigStatic/human2/action/normal.png",
+          "actionShow": false
+        },
+        "welcome": {
+          "name": "欢迎",
+          "apng": "pub-ui/humanConfigStatic/human2/action/sayHi.png",
+          "actionShow": true
+        },
+        "action": {
+          "name": "默认",
+          "apng": "pub-ui/humanConfigStatic/human2/action/sayHi.png",
+          "actionShow": false
+        },
+        "speak": {
+          "name": "说话",
+          "apng": "pub-ui/humanConfigStatic/human2/action/introduceProd.png",
+          "actionShow": false
+        },
+        "speakStatic": {
+          "name": "说话-无动作",
+          "apng": "pub-ui/humanConfigStatic/human2/action/introduceProd.png",
+          "actionShow": false
+        },
+        "submitInvoice": {
+          "name": "递发票",
+          "apng": "pub-ui/humanConfigStatic/human2/action/submitInvoice.png",
+          "actionShow": true
+        },
+        "queryData": {
+          "name": "查询数据",
+          "apng": "pub-ui/humanConfigStatic/human2/action/queryData.png",
+          "actionShow": true
+        },
+        "tel": {
+          "name": "手机号",
+          "apng": "pub-ui/humanConfigStatic/human2/action/tel.png",
+          "actionShow": true
+        },
+        "danceStatus": {
+          "name": "跳舞状态",
+          "apng": "pub-ui/humanConfigStatic/human2/action/sayHi.png",
+          "actionShow": false
+        }
+      }
+    },
+    "human3": {
+      "id": "human3",
+      "name": "未来客服",
+      "nameEn": "woman",
+      "voiceName": "x4_xiaoyan",
+      "avatar": "pub-ui/humanConfigStatic/human3/avatar.png",
+      "actions": {
+        "default": {},
+        "speak": {},
+        "danceStatus": {
+          "name": "跳舞状态",
+          "apng": "pub-ui/humanConfigStatic/human3/avatar.png",
+          "actionShow": false
+        }
+      }
+    },
+    "human4": {
+      "id": "human4",
+      "name": "卡通形象",
+      "nameEn": "man2",
+      "voiceName": "x4_xiaoyan",
+      "avatar": "pub-ui/humanConfigStatic/human4/avatar.png",
+      "actions": {
+        "default": {},
+        "speak": {},
+        "danceStatus": {
+          "name": "跳舞状态",
+          "apng": "pub-ui/humanConfigStatic/human3/avatar.png",
+          "actionShow": false
+        }
+      }
+    }
+  },
+  "initAvatar": "human1",
+  "wakeWords": ["小翼小翼","小小", "小姨小姨", "小一小一", "小易小易", "想一想","小艺小艺"],
+  "dialogues": {
+    "welcome": [
+      {
+        "text": "嗨，欢迎来到朝阳门营业厅，你可以说\"<span>小翼小翼</span>\"唤醒我",
+        "audio": "嗨，欢迎来到朝阳门营业厅，你可以说小翼小翼唤醒我！"
+      },
+      {
+        "text": "嗨，朋友！我是小翼，在你身边的营业厅小帮手，你可以说\"<span>小翼小翼</span>\"唤醒我！",
+        "audio": "嗨，朋友！我是小翼，在你身边的营业厅小帮手，你可以说小翼小翼唤醒我！"
+      }
+    ],
+    "awakening": [
+      {
+        "text": "哇，你成功唤起了我有什么想和小翼聊聊的吗？<span>查流量、充话费、打印发票...</span>，我都能帮您轻松搞定",
+        "audio": "哇，你成功唤起了我，有什么想和小翼聊聊的吗？查流量、充话费、打印发票，我都能帮您轻松搞定！"
+      },
+      {
+        "text": "信号连接成功！数字人客服\"小翼\"为您待命。开启高效、贴心的<span>电信服务新体验</span>，现在开始吗？🌐",
+        "audio": "信号连接成功！数字人客服小翼为您待命。开启高效、贴心的电信服务新体验，现在开始吗？"
+      }
+    ]
+  },
+  "audios": {
+    "happy": "pub-ui/images/audio/happy.MP3",
+    "disappointed": "pub-ui/images/audio/disappointed.MP3",
+    "finishing": "pub-ui/images/audio/succ.MP3",
+    "queryData": "pub-ui/images/audio/queryData.MP3",
+    "dance": "pub-ui/images/audio/dance.MP3",
+    "submitInvoice": "pub-ui/images/audio/au2.MP3",
+    "danceStatus": "pub-ui/images/audio/danceStatus.MP3"
+  },
+  "businessFlows": {
+    "recharge": {
+      "name": "充话费",
+      "keywords": ["充话费","充值缴费", "话费充值", "充值话费", "我要充话费", "帮我充话费", "充值"],
+      "steps": [
+        {
+          "id": "request",
+          "text": "这就为您充值，请告诉我您要充值的号码和充值金额",
+          "audio": "这就为您充值，请告诉我您要充值的号码和充值金额",
+          "actions": ["speak"]
+        },
+        {
+          "id": "info_input",
+          "text": "请您确认屏幕下方的手机与金额是否正确",
+          "audio": "请您确认屏幕下方的手机与金额是否正确",
+          "actions": ["speakStatic"]
+        },
+        {
+          "id": "confirmation",
+          "text": "现在我要变出微信支付二维码，稍等一下下哦，很快就可以成功哦！",
+          "audio": "现在我要变出微信支付二维码，稍等一下下哦，很快就可以成功哦",
+          "actions": ["speakStatic"]
+        },
+        {
+          "id": "success",
+          "text": "充值成功了！当前余额50元，您可以继续与我对话或点击右上方按钮结束对话",
+          "audio": "充值成功了！当前余额50元，您可以继续与我对话或点击右上方按钮结束对话",
+          "actions": ["finishing"]
+        }
+      ]
+    },
+    "invoice": {
+      "name": "打印发票",
+      "keywords": ["我要打印发票", "打印发票", "开发票", "发票"],
+      "steps": [
+        {
+          "id": "request",
+          "text": "没问题，请告诉我需要开具发票的号码",
+          "audio": "没问题，请告诉我需要开具发票的号码",
+          "actions": ["speakStatic"]
+        },
+        {
+          "id": "requestInvoice",
+          "text": "好的，正在查询，请稍等...已为您查询到以上4张发票待打印",
+          "audio": "好的，正在查询，请稍等...已为您查询到以上4张发票待打印",
+          "actions": ["queryData"]
+        },
+        {
+          "id": "confirmation",
+          "text": "请确认开票信息",
+          "audio": "请确认开票信息",
+          "actions": ["speakStatic"]
+        },
+        {
+          "id": "processing",
+          "text": "好的，正在开票，请稍等",
+          "audio": "好的，正在开票，请稍等",
+          "actions": ["speakStatic"]
+        },
+        {
+          "id": "result",
+          "text": "发票已开具，请查收",
+          "audio": "发票已开具，请查收",
+          "actions": ["submitInvoice"]
+        }
+      ]
+    },
+    "dataQuery": {
+      "name": "查话费",
+      "keywords": ["我要查话费", "查话费", "话费查询", "查询话费"],
+      "steps": [
+        {
+          "id": "request",
+          "text": "好的 请告诉我需要查询的号码...",
+          "audio": "好的，请告诉我需要查询的号码",
+          "actions": ["speak"]
+        },
+        {
+          "id": "confirmation",
+          "text": "好的，正在查询，请稍等...小翼已经帮你查到啦,...",
+          "audio": "好的，正在查询，请稍等，小翼已经帮你查到啦",
+          "actions": ["speakStatic"]
+        },
+        {
+          "id": "result",
+          "text": "你可以继续与我对话或点击右上方按钮结束对话",
+          "audio": "你可以继续与我对话或点击右上方按钮结束对话",
+          "actions": ["speak"]
+        }
+      ]
+    }
+  },
+  "states": {
+    "WELCOME": "welcome",
+    "AWAKENED": "awakened",
+    "BUSINESS_PROCESSING": "business_processing"
+  },
+  "intervals": {
+    "welcomeLoop": 15000,
+    "awakenedLoop": 40000
+  },
+  "presetQA": {
+    "我要打印发票": "",
+    "我要查流量": "",
+    "我要充话费": ""
+  },
+  "typewriter": {
+    "speed": 100,
+    "chatSpeed": 200,
+    "chatWorldSpeed": 80
+  }
+}
