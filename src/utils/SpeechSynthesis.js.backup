@@ -1,0 +1,669 @@
+/**
+ * 语音合成工具
+ * 科大讯飞WebSocket实现
+ */
+
+export class VoiceSynthesizer {
+  constructor() {
+    this.socket = null;
+    this.currentAudio = null;
+    this.listeners = new Map();
+    this.isReady = false;
+    this.isPlaying = false;
+    this.isPaused = false;
+    this.currentText = '';
+    this.wsUrl = 'ws://localhost:3001/tts-ws';
+
+    // 流式播放相关
+    this.audioContext = null;
+    this.gainNode = null;
+    this.nextStartTime = 0;
+    this.initialBufferSec = 0.2;
+    this.streamStarted = false;
+    this.streamEnded = false;
+    this.streamFinalized = false;
+    this.lastSource = null;
+
+    // 用于精确追踪音频源
+    this.activeSources = new Set();
+    this.endTimer = null;
+    this.currentOptions = null;
+
+    this.realPlaybackEndTime = 0;  // 实际播放结束时间
+    this.endCheckInterval = null;   // 结束检测定时器
+    this.isReallyPlaying = false;
+  }
+
+  async init() {
+    this.isReady = true;
+    return true;
+  }
+
+  async speak(text, options = {}) {
+    if (!this.isReady) await this.init();
+
+    const {
+      onStart = null,
+      onStop = null,
+      onError = null,
+      voiceName = 'x4_yezi', // 默认发音人
+    } = options;
+
+    this.stop();
+
+    const cleanText = this._cleanText(text);
+    if (!cleanText.trim()) {
+      onStop?.();
+      return;
+    }
+
+    this.currentText = cleanText;
+    this.currentOptions = { onStart, onStop, onError, voiceName };
+
+    try {
+      await this._speakWithWebSocket(cleanText, { onStart, onStop, onError, voiceName });
+    } catch (error) {
+      console.error('语音合成错误:', error);
+      this._emit('error', { error, text: cleanText });
+      onError?.(error);
+    }
+  }
+
+  async _speakWithWebSocket(text, options = {}) {
+    return new Promise((resolve, reject) => {
+      // 重置所有状态
+      this._resetStreamState();
+
+      this.socket = new WebSocket(this.wsUrl);
+      let audioChunks = [];
+
+      this.socket.onopen = () => {
+        // 🔥 使用轮询等待 WebSocket 完全就绪
+        const waitForReady = (retries = 0) => {
+          if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+            try {
+              this.socket.send(JSON.stringify({ action: 'connect' }));
+            } catch (e) {
+              console.error('TTS 发送连接消息失败:', e);
+              reject(e);
+            }
+          } else if (retries < 10) {
+            // 最多重试10次，每次间隔20ms（总共200ms）
+            setTimeout(() => waitForReady(retries + 1), 20);
+          } else {
+            console.error('TTS WebSocket 连接超时，当前状态:', this.socket?.readyState);
+            reject(new Error('WebSocket 连接超时'));
+          }
+        };
+        waitForReady();
+      };
+
+      this.socket.onmessage = (event) => {
+        try {
+          let response;
+          if (typeof event.data === 'string') {
+            response = JSON.parse(event.data);
+          } else if (event.data instanceof Blob) {
+            const reader = new FileReader();
+            reader.onload = () => {
+              const audioChunk = new Uint8Array(reader.result);
+              audioChunks.push(audioChunk);
+            };
+            reader.readAsArrayBuffer(event.data);
+            return;
+          } else {
+            return;
+          }
+
+          if (response.error) {
+            reject(new Error(response.error));
+            return;
+          }
+
+          if (response.status === 'connected') {
+            // 🔥 确保 WebSocket 状态就绪后再发送
+            if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+              this._sendTTSRequest(text, options.voiceName);
+            } else {
+              console.warn('TTS 收到 connected 响应，但 socket 未就绪');
+            }
+            return;
+          }
+
+          if (response.status === 'closed') {
+            this._handleStreamEnd(audioChunks, options);
+            resolve();
+            return;
+          }
+
+          // 处理讯飞返回的音频数据
+          if (response.type === 'audio' && response.data) {
+            const binaryString = atob(response.data);
+            const audioChunk = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+              audioChunk[i] = binaryString.charCodeAt(i);
+            }
+            audioChunks.push(audioChunk);
+            this._enqueuePcmChunk(audioChunk, options);
+
+            if (response.status === 2) {
+              this._handleStreamEnd(audioChunks, options);
+              this.socket.close();
+              resolve();
+            }
+            return;
+          }
+
+          // 处理原始讯飞格式的响应
+          if (response.code === 0 && response.data && response.data.audio) {
+            const binaryString = atob(response.data.audio);
+            const audioChunk = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+              audioChunk[i] = binaryString.charCodeAt(i);
+            }
+            audioChunks.push(audioChunk);
+            this._enqueuePcmChunk(audioChunk, options);
+
+            if (response.data.status === 2) {
+              this._handleStreamEnd(audioChunks, options);
+              this.socket.close();
+              resolve();
+            }
+            return;
+          }
+
+          if (response.code && response.code !== 0) {
+            reject(new Error(response.message || '合成失败'));
+          }
+        } catch (error) {
+          reject(error);
+        }
+      };
+
+      this.socket.onclose = () => {
+        this._handleStreamEnd(audioChunks, options);
+      };
+
+      this.socket.onerror = (error) => {
+        console.error('WebSocket错误:', error);
+        reject(new Error('WebSocket连接失败'));
+      };
+    });
+  }
+
+  /**
+   * 处理流结束 - 纯流式版
+   */
+  _handleStreamEnd(audioChunks, options) {
+    this.streamEnded = true;
+
+    if (!this.streamStarted) {
+      // 流未启动,直接结束
+      this._finalizeStreamPlayback(options);
+      return;
+    }
+  }
+
+
+  /**
+   * 调度流式播放结束
+   */
+  _scheduleStreamEnd(options) {
+    // 清除之前的定时器
+    if (this.endTimer) {
+      clearTimeout(this.endTimer);
+      this.endTimer = null;
+    }
+
+    if (!this.audioContext || this.streamFinalized) {
+      return;
+    }
+
+    // 计算剩余播放时间
+    const now = this.audioContext.currentTime;
+    const remainingTime = Math.max(0, this.nextStartTime - now);
+
+    // 添加小的缓冲时间（100ms）确保最后一帧播完
+    const delay = (remainingTime + 0.1) * 1000;
+
+    this.endTimer = setTimeout(() => {
+      this._finalizeStreamPlayback(options);
+      // 二次确认：检查是否还有活跃的音频源
+      // if (this.activeSources.size === 0 && !this.streamFinalized) {
+      //   this._finalizeStreamPlayback(options);
+      // } else {
+      //   // 如果还有活跃源，再等待一小段时间
+      //   this.endTimer = setTimeout(() => {
+      //     if (!this.streamFinalized) {
+      //       this._finalizeStreamPlayback(options);
+      //     }
+      //   }, 200);
+      // }
+    }, delay);
+  }
+
+  /**
+   * 流式播放音频块
+   */
+  _enqueuePcmChunk(u8pcm, options = {}) {
+    try {
+      if (!this.audioContext) {
+        this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        this.gainNode = this.audioContext.createGain();
+        this.gainNode.gain.value = 1.0;
+        this.gainNode.connect(this.audioContext.destination);
+        this.nextStartTime = 0;
+        this.streamStarted = false;
+        this.streamEnded = false;
+        this.lastSource = null;
+        this.activeSources.clear();
+        this.realPlaybackEndTime = 0;
+        this.isReallyPlaying = false;
+      }
+      // 创建音频缓冲区
+      const samples = Math.floor(u8pcm.length / 2);
+      const buffer = this.audioContext.createBuffer(1, samples, 16000);
+      const channelData = buffer.getChannelData(0);
+      const dv = new DataView(u8pcm.buffer, u8pcm.byteOffset, u8pcm.byteLength);
+      for (let i = 0; i < samples; i++) {
+        const s = dv.getInt16(i * 2, true);
+        channelData[i] = s / 32768;
+      }
+      // 创建音频源
+      const src = this.audioContext.createBufferSource();
+      src.buffer = buffer;
+      src.connect(this.gainNode);
+
+      const now = this.audioContext.currentTime;
+      if (!this.streamStarted) {
+        this.nextStartTime = Math.max(now + this.initialBufferSec, this.nextStartTime || 0);
+        this.streamStarted = true;
+        this.isPlaying = true;
+        this.isReallyPlaying = true;
+        this._emit('start', { text: this.currentText });
+        options.onStart?.();
+
+        // 启动实时播放状态检测
+        this._startPlaybackMonitor();
+      } else if (this.nextStartTime < now) {
+        this.nextStartTime = now + 0.02;
+      }
+
+      this.activeSources.add(src);
+      this.lastSource = src;
+
+      src.start(this.nextStartTime);
+      this.nextStartTime += buffer.duration;
+
+      // 更新预计的实际播放结束时间
+      this.realPlaybackEndTime = this.nextStartTime;
+
+      // 优化的 onended 回调
+      src.onended = () => {
+        this.activeSources.delete(src);
+
+        // 关键优化:只在确认是最后一个source时才触发结束
+        if (this.streamEnded &&
+          this.activeSources.size === 0 &&
+          src === this.lastSource) {
+          // 立即触发,不再延迟
+          this._tryFinalizeStream(options);
+        }
+      };
+    } catch (e) {
+      console.error('流式播放失败:', e);
+    }
+  }
+  _startPlaybackMonitor() {
+    if (this.endCheckInterval) {
+      clearInterval(this.endCheckInterval);
+    }
+
+    this.endCheckInterval = setInterval(() => {
+      if (!this.audioContext || !this.streamStarted) {
+        this._stopPlaybackMonitor();
+        return;
+      }
+
+      const now = this.audioContext.currentTime;
+
+      // 检测:如果当前时间已经超过所有预定播放时间,说明真的播放完了
+      if (this.streamEnded && now >= this.realPlaybackEndTime) {
+        const isStillActive = this.activeSources.size > 0;
+
+        if (!isStillActive) {
+          this.isReallyPlaying = false;
+          this._tryFinalizeStream(this.currentOptions);
+        }
+      }
+    }, 50); // 每50ms检测一次
+  }
+
+  /**
+   * 停止播放监控
+   */
+  _stopPlaybackMonitor() {
+    if (this.endCheckInterval) {
+      clearInterval(this.endCheckInterval);
+      this.endCheckInterval = null;
+    }
+  }
+
+  /**
+   * 尝试完成流播放
+   */
+  _tryFinalizeStream(options) {
+    if (this.streamFinalized) return;
+
+    // 双重检查:确保真的没有活跃的source了
+    if (this.activeSources.size > 0) return;
+
+    // 三重检查:确保当前时间确实超过了播放结束时间
+    if (this.audioContext) {
+      const now = this.audioContext.currentTime;
+      if (now < this.realPlaybackEndTime - 0.05) { // 留50ms误差
+        return;
+      }
+    }
+
+    this._finalizeStreamPlayback(options);
+  }
+
+  /**
+   * 完成流式播放
+   */
+  _finalizeStreamPlayback(options = {}) {
+    if (this.streamFinalized) return;
+
+    this.streamFinalized = true;
+    this.isPlaying = false;
+    this.isReallyPlaying = false;
+
+    // 停止监控
+    this._stopPlaybackMonitor();
+
+    // 清除定时器
+    if (this.endTimer) {
+      clearTimeout(this.endTimer);
+      this.endTimer = null;
+    }
+
+    // 立即触发结束事件
+    this._emit('end', { text: this.currentText });
+    options.onStop?.();
+    this.currentText = '';
+  }
+  /**
+   * 重置流状态
+   */
+  _resetStreamState() {
+    this.streamStarted = false;
+    this.streamEnded = false;
+    this.streamFinalized = false;
+    this.nextStartTime = 0;
+    this.lastSource = null;
+    this.activeSources.clear();
+    this.realPlaybackEndTime = 0;
+    this.isReallyPlaying = false;
+
+    this._stopPlaybackMonitor();
+
+    if (this.endTimer) {
+      clearTimeout(this.endTimer);
+      this.endTimer = null;
+    }
+  }
+
+
+  _sendTTSRequest(text, voiceName = 'x4_yezi') {
+    if (!text || text.trim() === '') {
+      console.error('错误: 合成文本不能为空');
+      return;
+    }
+
+    // 🔥 检查 WebSocket 状态，确保已连接
+    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
+      console.warn('TTS WebSocket 未就绪，当前状态:', this.socket?.readyState, '期望状态:', WebSocket.OPEN);
+      return;
+    }
+
+    const encodedText = btoa(unescape(encodeURIComponent(text)));
+
+    const fullFrame = {
+      common: {
+        app_id: '130cba7b'
+      },
+      business: {
+        aue: 'raw',
+        auf: 'audio/L16;rate=16000',
+        vcn: voiceName, // 使用传入的发音人参数
+        speed: 70,
+        volume: 50,
+        pitch: 50,
+        tte: 'utf8',
+        sfl: 1
+      },
+      data: {
+        status: 2,
+        text: encodedText
+      }
+    };
+
+    try {
+      this.socket.send(JSON.stringify(fullFrame));
+    } catch (e) {
+      console.error('TTS 发送请求失败:', e);
+    }
+  }
+
+  _playAudioChunks(audioChunks, options = {}) {
+    if (!audioChunks || audioChunks.length === 0) {
+      options.onStop?.();
+      return;
+    }
+
+    let totalLength = 0;
+    audioChunks.forEach(chunk => {
+      totalLength += chunk.length;
+    });
+
+    const mergedAudio = new Uint8Array(totalLength);
+    let offset = 0;
+    audioChunks.forEach(chunk => {
+      mergedAudio.set(chunk, offset);
+      offset += chunk.length;
+    });
+
+    const wavHeader = this._createWavHeader(mergedAudio.length);
+    const wavData = new Uint8Array(wavHeader.length + mergedAudio.length);
+    wavData.set(wavHeader, 0);
+    wavData.set(mergedAudio, wavHeader.length);
+
+    const audioBlob = new Blob([wavData], { type: 'audio/wav' });
+    const audioUrl = URL.createObjectURL(audioBlob);
+
+    this.currentAudio = new Audio(audioUrl);
+    this.currentAudio.volume = 1.0;
+    this.currentAudio.preload = 'auto';
+
+    this.currentAudio.onloadeddata = () => {
+      this.isPlaying = true;
+      this._emit('start', { text: this.currentText });
+      options.onStart?.();
+
+      this.currentAudio.play().catch(error => {
+        console.error('音频播放失败:', error);
+        this.isPlaying = false;
+        this._emit('error', { error, text: this.currentText });
+        options.onError?.(error);
+      });
+    };
+
+    this.currentAudio.onended = () => {
+      this.isPlaying = false;
+      const text = this.currentText;
+      this.currentText = '';
+      this._emit('end', { text });
+      options.onStop?.();
+      URL.revokeObjectURL(audioUrl);
+    };
+
+    this.currentAudio.onerror = (error) => {
+      this.isPlaying = false;
+      this.currentText = '';
+      this._emit('error', { error, text: this.currentText });
+      options.onError?.(error);
+      URL.revokeObjectURL(audioUrl);
+    };
+  }
+
+  _createWavHeader(dataLength) {
+    const sampleRate = 16000;
+    const numChannels = 1;
+    const bitsPerSample = 16;
+    const byteRate = sampleRate * numChannels * bitsPerSample / 8;
+    const blockAlign = numChannels * bitsPerSample / 8;
+    const totalLength = dataLength + 44;
+
+    const header = new ArrayBuffer(44);
+    const view = new DataView(header);
+
+    view.setUint32(0, 0x52494646, false); // "RIFF"
+    view.setUint32(4, totalLength - 8, true);
+    view.setUint32(8, 0x57415645, false); // "WAVE"
+    view.setUint32(12, 0x666d7420, false); // "fmt "
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, numChannels, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, byteRate, true);
+    view.setUint16(32, blockAlign, true);
+    view.setUint16(34, bitsPerSample, true);
+    view.setUint32(36, 0x64617461, false); // "data"
+    view.setUint32(40, dataLength, true);
+
+    return new Uint8Array(header);
+  }
+
+  stop() {
+    if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+      this.socket.close();
+    }
+
+    if (this.isPlaying && this.currentAudio) {
+      this.currentAudio.pause();
+      this.currentAudio.currentTime = 0;
+      this.currentAudio = null;
+      this.isPlaying = false;
+      this.currentText = '';
+    }
+
+    // 停止监控
+    this._stopPlaybackMonitor();
+
+    // 清理定时器
+    if (this.endTimer) {
+      clearTimeout(this.endTimer);
+      this.endTimer = null;
+    }
+
+    // 停止流式播放
+    if (this.audioContext) {
+      this.activeSources.forEach(src => {
+        try { src.stop(); } catch { }
+      });
+      this.activeSources.clear();
+
+      try { this.gainNode?.disconnect(); } catch { }
+      try { this.audioContext.close(); } catch { }
+      this.audioContext = null;
+      this.gainNode = null;
+      this._resetStreamState();
+    }
+  }
+  isActuallyPlaying() {
+    if (!this.audioContext || !this.streamStarted) return false;
+
+    const now = this.audioContext.currentTime;
+    return this.isReallyPlaying &&
+      this.activeSources.size > 0 &&
+      now < this.realPlaybackEndTime;
+  }
+  pause() {
+    if (this.isPlaying && this.currentAudio && !this.currentAudio.paused) {
+      this.currentAudio.pause();
+      this.isPaused = true;
+    }
+  }
+
+  resume() {
+    if (this.currentAudio && this.currentAudio.paused && this.isPaused) {
+      this.currentAudio.play();
+      this.isPaused = false;
+    }
+  }
+
+  getVoices() {
+    return [
+      { name: 'x4_xiaoyan', lang: 'zh-CN', localService: false, voiceURI: 'x4_xiaoyan' },
+      { name: 'x4_xiaofeng', lang: 'zh-CN', localService: false, voiceURI: 'x4_xiaofeng' },
+      { name: 'x4_xiaoqian', lang: 'zh-CN', localService: false, voiceURI: 'x4_xiaoqian' }
+    ];
+  }
+
+  getState() {
+    return {
+      speaking: this.isPlaying,
+      paused: this.isPaused,
+      pending: false,
+      isReady: this.isReady,
+      voicesCount: this.getVoices().length,
+    };
+  }
+
+  isSupported() {
+    return typeof WebSocket !== 'undefined';
+  }
+
+  on(event, callback) {
+    if (!this.listeners.has(event)) {
+      this.listeners.set(event, []);
+    }
+    this.listeners.get(event).push(callback);
+  }
+
+  off(event, callback) {
+    if (!this.listeners.has(event)) return;
+    const callbacks = this.listeners.get(event);
+    const index = callbacks.indexOf(callback);
+    if (index > -1) callbacks.splice(index, 1);
+  }
+
+  destroy() {
+    this.stop();
+    this.listeners.clear();
+    this.isReady = false;
+    this.currentOptions = null;
+  }
+
+  _cleanText(html) {
+    if (typeof html !== 'string') return '';
+    const text = html.replace(/<[^>]*>/g, '');
+    const textarea = document.createElement('textarea');
+    textarea.innerHTML = text;
+    return textarea.value.trim();
+  }
+
+  _emit(event, data) {
+    if (!this.listeners.has(event)) return;
+    this.listeners.get(event).forEach(callback => {
+      try {
+        callback(data);
+      } catch (error) {
+        console.error(`Error in ${event} listener:`, error);
+      }
+    });
+  }
+}
+
+export default VoiceSynthesizer;

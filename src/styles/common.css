@@ -1,0 +1,590 @@
+@charset "utf-8";
+
+/* 基础样式 */
+
+/* reset */
+* {
+  box-sizing: border-box;
+}
+html {
+  font-size: 100px;
+}
+body,
+p,
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+ul,
+li,
+ol,
+dl,
+dt,
+dd {
+  margin: 0;
+  padding: 0;
+}
+body {
+  font: 0.32rem/1.6 normal Helvetica;
+  color: #000;
+  background-color: #f4f4f4;
+}
+a {
+  text-decoration: none;
+}
+button {
+  outline: none;
+  border: none;
+}
+ul,
+li,
+ol,
+li {
+  list-style: none;
+}
+span {
+  display: inline-block;
+  vertical-align: middle;
+}
+input {
+  border: none;
+  outline: none;
+}
+img,
+a img {
+  border: none;
+}
+a,
+input,
+select,
+button,
+textarea {
+  -webkit-tap-highlight-color: transparent;
+  font-family: Helvetica;
+}
+div,
+p {
+  max-height: 1000rem;
+}
+.clearfix:before,
+.clearfix:after {
+  content: '';
+  display: table;
+  clear: both;
+}
+.bdr-0 {
+  border-right: none !important;
+}
+
+/*ui-row*/
+.ui-row {
+  display: block;
+}
+.ui-row:before,
+.ui-row:after {
+  content: '';
+  display: table;
+  clear: both;
+}
+.ui-row > [class^='col-'] {
+  display: block;
+  float: left;
+  min-height: 1px;
+}
+.bd-none {
+  border: none !important;
+}
+.col-1 {
+  width: 8.33333333%;
+}
+.col-2 {
+  width: 16.66666667%;
+}
+.col-3 {
+  width: 25%;
+}
+.col-4 {
+  width: 33.33333333%;
+}
+.col-5 {
+  width: 41.66666667%;
+}
+.col-6 {
+  width: 50%;
+}
+.col-7 {
+  width: 58.33333333%;
+}
+.col-8 {
+  width: 66.66666667%;
+}
+.col-9 {
+  width: 75%;
+}
+.col-10 {
+  width: 83.33333333%;
+}
+.col-11 {
+  width: 91.66666667%;
+}
+.col-12 {
+  width: 100%;
+}
+
+/* base */
+.tl {
+  text-align: left !important;
+}
+.tc {
+  text-align: center !important;
+}
+.tr {
+  text-align: right !important;
+}
+.fl {
+  float: left !important;
+}
+.fr {
+  float: right !important;
+}
+/* padding/margin */
+.mgt-0 {
+  margin-top: 0 !important;
+}
+.mgt-10 {
+  margin-top: 0.1rem !important;
+}
+.mgt-15 {
+  margin-top: 0.15rem !important;
+}
+.mgt-20 {
+  margin-top: 0.2rem !important;
+}
+.mgt-30 {
+  margin-top: 0.3rem !important;
+}
+.mgt-40 {
+  margin-top: 0.4rem !important;
+}
+.mgt-50 {
+  margin-top: 0.5rem !important;
+}
+.mgt-60 {
+  margin-top: 0.6rem !important;
+}
+.mgt-70 {
+  margin-top: 0.7rem !important;
+}
+.mgt-80 {
+  margin-top: 0.8rem !important;
+}
+.mgt-120 {
+  margin-top: 1.2rem !important;
+}
+.mgt-100 {
+  margin-top: 1rem !important;
+}
+.mgb-0 {
+  margin-bottom: 0 !important;
+}
+.mgb-10 {
+  margin-bottom: 0.1rem !important;
+}
+.mgb-15 {
+  margin-bottom: 0.15rem !important;
+}
+.mgb-20 {
+  margin-bottom: 0.2rem !important;
+}
+.mgb-30 {
+  margin-bottom: 0.3rem !important;
+}
+.mgb-40 {
+  margin-bottom: 0.4rem !important;
+}
+.mgb-50 {
+  margin-bottom: 0.5rem !important;
+}
+.mgl-0 {
+  margin-left: 0 !important;
+}
+.mgl-08 {
+  margin-left: -0.08rem !important;
+}
+.mgl-10 {
+  margin-left: 0.1rem !important;
+}
+.mgl-15 {
+  margin-left: 0.15rem !important;
+}
+.mgl-20 {
+  margin-left: 0.2rem !important;
+}
+.mgl-30 {
+  margin-left: 0.3rem !important;
+}
+.mgl-35 {
+  margin-left: 0.35rem !important;
+}
+.mgl-40 {
+  margin-left: 0.4rem !important;
+}
+.mgl-50 {
+  margin-left: 0.5rem !important;
+}
+.mgr-0 {
+  margin-right: 0 !important;
+}
+.mgr-10 {
+  margin-right: 0.1rem !important;
+}
+.mgr-15 {
+  margin-right: 0.15rem !important;
+}
+.mgr-20 {
+  margin-right: 0.2rem !important;
+}
+.mgr-30 {
+  margin-right: 0.3rem !important;
+}
+.mgr-40 {
+  margin-right: 0.4rem !important;
+}
+.mgr-50 {
+  margin-right: 0.5rem !important;
+}
+.mgt-427 {
+  margin-top: 4.27rem !important;
+}
+.pd-0 {
+  padding: 0;
+}
+.pd-10 {
+  padding: 0.1rem !important;
+}
+.pd-20 {
+  padding: 0.2rem !important;
+}
+.pd-25 {
+  padding: 0.25rem !important;
+}
+.pd-30 {
+  padding: 0.3rem !important;
+}
+.pd-40 {
+  padding: 0.4rem !important;
+}
+.pd-50 {
+  padding: 0.5rem !important;
+}
+.pdt-0 {
+  padding-top: 0 !important;
+}
+.pdt-5 {
+  padding-top: 0.05rem !important;
+}
+.pdt-10 {
+  padding-top: 0.1rem !important;
+}
+.pdt-15 {
+  padding-top: 0.15rem !important;
+}
+.pdt-20 {
+  padding-top: 0.2rem !important;
+}
+.pdt-25 {
+  padding-top: 0.25rem !important;
+}
+.pdt-30 {
+  padding-top: 0.3rem !important;
+}
+.pdt-40 {
+  padding-top: 0.4rem !important;
+}
+.pdt-50 {
+  padding-top: 0.5rem !important;
+}
+.pdt-80 {
+  padding-top: 0.8rem !important;
+}
+.pdt-90 {
+  padding-top: 0.9rem !important;
+}
+.pdb-0 {
+  padding-bottom: 0 !important;
+}
+.pdb-10 {
+  padding-bottom: 0.1rem !important;
+}
+.pdb-15 {
+  padding-bottom: 0.15rem !important;
+}
+.pdb-20 {
+  padding-bottom: 0.2rem !important;
+}
+.pdb-30 {
+  padding-bottom: 0.3rem !important;
+}
+.pdb-40 {
+  padding-bottom: 0.4rem !important;
+}
+.pdb-50 {
+  padding-bottom: 0.5rem !important;
+}
+.pdb-80 {
+  padding-bottom: 0.8rem !important;
+}
+.pdl-0 {
+  padding-left: 0 !important;
+}
+.pdl-10 {
+  padding-left: 0.1rem !important;
+}
+.pdl-20 {
+  padding-left: 0.2rem !important;
+}
+.pdl-30 {
+  padding-left: 0.3rem !important;
+}
+.pdl-40 {
+  padding-left: 0.4rem !important;
+}
+.pdl-50 {
+  padding-left: 0.5rem !important;
+}
+.pdl-60 {
+  padding-left: 0.6rem !important;
+}
+.pdr-0 {
+  padding-right: 0 !important;
+}
+.pdr-10 {
+  padding-right: 0.1rem !important;
+}
+.pdr-20 {
+  padding-right: 0.2rem !important;
+}
+.pdr-30 {
+  padding-right: 0.3rem !important;
+}
+.pdr-40 {
+  padding-right: 0.4rem !important;
+}
+.pdr-50 {
+  padding-right: 0.5rem !important;
+}
+/* font-size */
+.fs-20 {
+  font-size: 0.2rem !important;
+}
+.fs-22 {
+  font-size: 0.22rem !important;
+}
+.fs-24 {
+  font-size: 0.24rem !important;
+}
+.fs-26 {
+  font-size: 0.26rem !important;
+}
+.fs-28 {
+  font-size: 0.28rem !important;
+}
+.fs-30 {
+  font-size: 0.3rem !important;
+}
+.fs-32 {
+  font-size: 0.32rem !important;
+}
+.fs-34 {
+  font-size: 0.34rem !important;
+}
+.fs-36 {
+  font-size: 0.36rem !important;
+}
+.fs-38 {
+  font-size: 0.38rem !important;
+}
+.fs-40 {
+  font-size: 0.4rem !important;
+}
+.fs-42 {
+  font-size: 0.42rem !important;
+}
+.fs-46 {
+  font-size: 0.46rem !important;
+}
+.fs-50 {
+  font-size: 0.5rem !important;
+}
+.fs-60 {
+  font-size: 0.6rem !important;
+}
+/* color/bgc-color */
+.color-white {
+  color: #fff !important;
+}
+.color-black {
+  color: #000 !important;
+}
+.color-red {
+  color: #fc6753 !important;
+}
+.color-red2 {
+  color: #ff3e3f !important;
+}
+.color-blue {
+  color: #209fd8 !important;
+}
+.color-ligblue {
+  color: #1b94d3 !important;
+}
+.color-3 {
+  color: #333 !important;
+}
+.color-6 {
+  color: #666 !important;
+}
+.color-9 {
+  color: #999 !important;
+}
+.color-85 {
+  color: #858585 !important;
+}
+.bgc-white {
+  background-color: #fff !important;
+}
+.bgc-black {
+  background-color: #000 !important;
+}
+.bgc-ligblue {
+  background-color: #eff8ff !important;
+}
+/*  */
+.hide {
+  display: none !important;
+}
+.fwb {
+  font-weight: bolder !important;
+}
+.fwn {
+  font-weight: normal !important;
+}
+.fw-500 {
+  font-weight: 500 !important;
+}
+.rel {
+  position: relative !important;
+}
+.abs {
+  position: absolute !important;
+}
+
+.flex-1 {
+  flex: 1 !important;
+}
+.flex-c {
+  display: flex;
+  align-items: center;
+}
+.flex-c-c {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.flex-c-b {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.flex-c-start {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+}
+.flex-c-end {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.flex-start-c {
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+}
+.flex-end-c {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+}
+.flex-between-c {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.flex-around-c {
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+}
+
+.flex-s {
+  display: flex;
+  align-items: stretch;
+}
+
+/* 滚动条轨道样式 */
+::-webkit-scrollbar {
+  width: 0.06rem; /* 设置滚动条宽度 */
+}
+
+/* 滚动条滑块样式 */
+::-webkit-scrollbar-thumb {
+  background-color: #519aee; /* 设置滑块背景颜色 */
+  border-radius: 0.04rem; /* 设置滑块圆角 */
+}
+
+/* 滚动条轨道hover状态样式 */
+::-webkit-scrollbar-track:hover {
+  background-color: #f1f1f1; /* 设置轨道hover状态时的背景颜色 */
+}
+
+/* 滚动条滑块hover状态样式 */
+::-webkit-scrollbar-thumb:hover {
+  background-color: #555; /* 设置滑块hover状态时的背景颜色 */
+}
+
+/* .overlay { position: fixed; z-index: 10; top: 0; left: 0; display: flex; justify-content: center; align-items: center; width: 100%; height: 100%; pointer-events: none; opacity: 1; }
+.overlay--loader { z-index: 1000; background: rgba(0, 0, 0, 0.3); } */
+
+.loader {
+  display: flex;
+}
+.loader div {
+  width: 0.45rem;
+  height: 0.45rem;
+  margin: -0.1rem 0.6em 0;
+  box-shadow: 0 0 0.1rem rgba(15, 81, 174, 0.3);
+  background: #0276f9;
+  animation: anim-loader 0.8s alternate infinite forwards;
+  animation-timing-function: cubic-bezier(0.215, 0.61, 0.355, 1);
+}
+.loader div:nth-child(2) {
+  border-radius: 50%;
+  background: #fff;
+  animation-delay: 0.15s;
+}
+.loader div:nth-child(3) {
+  animation-delay: 0.3s;
+}
+@keyframes anim-loader {
+  100% {
+    transform: translate3d(0, 0.45rem, 0) scale3d(0.9, 0.9, 1);
+  }
+}
+
+.lh-2 {
+  line-height: 200% !important;
+}

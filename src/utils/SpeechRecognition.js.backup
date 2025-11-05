@@ -1,0 +1,922 @@
+/**
+ * 语音识别工具 - 使用RecorderManager重构版
+ * 基于科大讯飞 WebSocket API + RecorderManager
+ * 支持持续识别和自动重连
+ * 
+ * 注意：适配代理服务器，代理服务器会自动发送首帧参数
+ */
+
+export class VoiceRecognizer {
+  constructor() {
+    this.ws = null;
+    this.listeners = new Map();
+    this.isReady = false;
+    this.isListening = false;
+    this.result = {
+      final: '',
+      interim: '',
+      confidence: 0,
+      alternatives: [],
+    };
+    this.wsUrl = 'ws://localhost:3001/asr';
+    this.isConnected = false;
+    this.isSpeaking = false;
+
+    // 识别结果缓存
+    this.resultText = '';
+    this.resultTextTemp = '';
+    this.lastNonPunctText = '';
+    this.isFirstFrame = false;
+
+    // 分段控制
+    this.segmentResetGapMs = 2000;
+    this.lastResultTs = 0;
+
+    // RecorderManager实例
+    this.recorder = null;
+
+    // VAD (语音活动检测) 相关
+    this.silenceThreshold = 0.04;
+    this.silenceDuration = 1500;
+    this.lastSpeechTime = 0;
+    this.silenceTimer = null;
+    this.minSpeechDuration = 500;
+    this.speechStartTime = 0;
+    this.isSpeechDetected = false;
+    this.waitingForFinalResult = false;
+    this.finalResultTimeout = null;
+
+    // 是否启用控制台日志
+    this.enableConsoleLog = true;
+
+    // 🔥 新增:连续识别控制
+    this.continuousMode = true; // 默认开启连续识别
+    this.autoReconnect = true;  // 自动重连
+    this.isStreamingActive = false; // 标记音频流是否活跃
+    
+    // 🔥 新增:首帧是否已发送标志
+    this.hasFirstFrameSent = false;
+    
+    // 🔥 新增:连接状态控制
+    this.isRecorderRunning = false; // 录音是否正在运行
+    this.isReconnecting = false; // 是否正在重连
+    
+    // 🔥 新增:代理服务器模式（代理服务器会自动发送首帧参数）
+    this.useProxyServer = true; // 默认使用代理服务器
+    
+    // 🔥 新增:重连延迟定时器
+    this.reconnectTimer = null;
+  }
+
+  async init(config = {}) {
+    try {
+      // 检查RecorderManager是否可用
+      if (typeof window.RecorderManager === 'undefined') {
+        throw new Error('RecorderManager未加载,请确保已引入相关脚本文件');
+      }
+
+      // 初始化RecorderManager
+      this.recorder = new window.RecorderManager('/recorder');
+      
+      // 设置录音回调
+      this._setupRecorderCallbacks();
+
+      this.isReady = true;
+      return true;
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  async start(options = {}) {
+    if (!this.isReady) {
+      await this.init(options);
+    }
+
+    if (this.isListening) {
+      // 如果已经在监听,先停止
+      await this.stop();
+    }
+
+    // 重置结果
+    this._resetResult();
+
+    // 标记状态
+    this.isListening = true;
+    this.isStreamingActive = true;
+    this.isFirstFrame = true;
+    this.hasFirstFrameSent = false;
+    this.isReconnecting = false;
+
+    try {
+      // 🔥 先启动录音（持续运行）
+      await this._startRecording();
+      
+      // 🔥 然后连接WebSocket
+      await this._ensureWebSocketConnection();
+
+      this._emit('start');
+    } catch (error) {
+      this.isListening = false;
+      this.isStreamingActive = false;
+      
+      // 停止录音
+      if (this.recorder) {
+        try {
+          this.recorder.stop();
+        } catch (e) { /* ignore */ }
+      }
+      
+      throw error;
+    }
+  }
+
+  async stop() {
+    this.isListening = false;
+    this.isStreamingActive = false;
+    this.isFirstFrame = false;
+    this.hasFirstFrameSent = false;
+    this.isReconnecting = false;
+
+    // 清理重连定时器
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+
+    // 清理 VAD 定时器
+    if (this.silenceTimer) {
+      clearTimeout(this.silenceTimer);
+      this.silenceTimer = null;
+    }
+
+    if (this.finalResultTimeout) {
+      clearTimeout(this.finalResultTimeout);
+      this.finalResultTimeout = null;
+    }
+
+    this.waitingForFinalResult = false;
+
+    // 🔥 发送结束帧
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      try {
+        this.ws.send(JSON.stringify({
+          data: {
+            status: 2,
+            format: 'audio/L16;rate=16000',
+            encoding: 'raw',
+            audio: ''
+          }
+        }));
+
+        // 延迟关闭,确保结束帧发送完成
+        setTimeout(() => {
+          if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+            this.ws.close();
+          }
+        }, 100);
+      } catch (e) {
+        if (this.enableConsoleLog) {
+          console.warn('[语音识别] 发送结束帧失败:', e);
+        }
+      }
+    }
+
+    // 停止录音
+    if (this.recorder) {
+      try {
+        this.recorder.stop();
+        this.isRecorderRunning = false;
+      } catch (e) {
+        if (this.enableConsoleLog) {
+          console.warn('[语音识别] 停止录音失败:', e);
+        }
+      }
+    }
+
+    // 重置识别结果
+    this.resultText = '';
+    this.resultTextTemp = '';
+    this.lastNonPunctText = '';
+    this.lastResultTs = 0;
+
+    this._emit('end');
+  }
+
+  async abort() {
+    this.isListening = false;
+    this.isStreamingActive = false;
+    this.hasFirstFrameSent = false;
+    this.isReconnecting = false;
+
+    // 清理重连定时器
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+
+    // 清理 VAD 定时器
+    if (this.silenceTimer) {
+      clearTimeout(this.silenceTimer);
+      this.silenceTimer = null;
+    }
+
+    if (this.finalResultTimeout) {
+      clearTimeout(this.finalResultTimeout);
+      this.finalResultTimeout = null;
+    }
+
+    this.waitingForFinalResult = false;
+
+    // 停止录音
+    if (this.recorder) {
+      try {
+        this.recorder.stop();
+        this.isRecorderRunning = false;
+      } catch (e) { /* ignore */ }
+    }
+
+    // 关闭 WebSocket
+    if (this.ws) {
+      try {
+        this.ws.close();
+      } catch (e) { /* ignore */ }
+      this.ws = null;
+    }
+
+    // 重置 VAD 状态
+    this.isSpeechDetected = false;
+    this.speechStartTime = 0;
+    this.lastSpeechTime = 0;
+  }
+
+  getResult() {
+    return {
+      final: this.result.final,
+      interim: this.result.interim,
+      confidence: this.result.confidence,
+      alternatives: this.result.alternatives,
+    };
+  }
+
+  getState() {
+    return {
+      isReady: this.isReady,
+      isListening: this.isListening,
+      isConnected: this.isConnected,
+      isSpeaking: this.isSpeaking,
+      result: { ...this.result }
+    };
+  }
+
+  isSupported() {
+    return typeof window.RecorderManager !== 'undefined';
+  }
+
+  /**
+   * 启用或禁用控制台日志输出
+   * @param {boolean} enabled - true 启用,false 禁用
+   */
+  setConsoleLog(enabled) {
+    this.enableConsoleLog = enabled;
+  }
+
+  on(event, callback) {
+    if (!this.listeners.has(event)) {
+      this.listeners.set(event, new Set());
+    }
+    this.listeners.get(event).add(callback);
+  }
+
+  off(event, callback) {
+    if (this.listeners.has(event)) {
+      this.listeners.get(event).delete(callback);
+    }
+  }
+
+  async destroy() {
+    await this.abort();
+    this.listeners.clear();
+    this.isReady = false;
+  }
+
+  /**
+   * 🔥 确保WebSocket连接可用
+   */
+  async _ensureWebSocketConnection() {
+    // 检查 WebSocket 状态
+    const needNewConnection = !this.ws ||
+      this.ws.readyState === WebSocket.CLOSED ||
+      this.ws.readyState === WebSocket.CLOSING;
+
+    if (needNewConnection) {
+      // 先关闭旧连接
+      if (this.ws) {
+        try {
+          this.ws.close();
+        } catch (e) { /* ignore */ }
+        this.ws = null;
+      }
+      await this._connectWebSocket();
+    } else if (this.ws.readyState === WebSocket.CONNECTING) {
+      // 如果正在连接,等待连接完成
+      await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          reject(new Error('WebSocket连接超时'));
+        }, 5000);
+
+        const checkConnection = () => {
+          if (this.ws.readyState === WebSocket.OPEN) {
+            clearTimeout(timeout);
+            if (this.enableConsoleLog) {
+              console.log('[语音识别] WebSocket连接完成');
+            }
+            resolve();
+          } else if (this.ws.readyState === WebSocket.CLOSED || this.ws.readyState === WebSocket.CLOSING) {
+            clearTimeout(timeout);
+            reject(new Error('WebSocket连接失败'));
+          } else {
+            setTimeout(checkConnection, 100);
+          }
+        };
+        checkConnection();
+      });
+    }
+  }
+
+  /**
+   * 设置RecorderManager回调
+   */
+  _setupRecorderCallbacks() {
+    // 录音开始回调
+    this.recorder.onStart = () => {
+      this.isRecorderRunning = true;
+      if (this.enableConsoleLog) {
+        console.log('[语音识别] 录音开始');
+      }
+    };
+
+    // 🔥 录音数据回调 - 关键修改
+    this.recorder.onFrameRecorded = ({ frameBuffer, isLastFrame }) => {
+      if (!this.isListening) return;
+
+      // 🔥 如果正在等待最终结果,跳过处理
+      if (this.waitingForFinalResult) {
+        return;
+      }
+
+      // 🔥 如果正在重连,跳过处理（等待重连完成）
+      if (this.isReconnecting) {
+        return;
+      }
+
+      // VAD检测
+      this._performVAD(frameBuffer);
+
+      // 🔥 如果WebSocket未连接,不发送数据
+      if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+        return;
+      }
+
+      // 🔥 静音门控：仅在检测到语音活动时发送音频帧，降低背景噪声影响
+      if (!this.isSpeechDetected) {
+        return;
+      }
+
+      try {
+        // 🔥 关键修复:代理服务器模式下,不需要发送首帧参数
+        // 代理服务器会在连接建立时自动发送
+        if (this.isFirstFrame && !this.hasFirstFrameSent) {
+          // 直接发送第一帧音频数据
+          this.ws.send(JSON.stringify({
+            data: {
+              status: 1, // 第一帧音频也使用 status: 1
+              format: 'audio/L16;rate=16000',
+              encoding: 'raw',
+              audio: this._arrayBufferToBase64(frameBuffer)
+            }
+          }));
+
+          this.hasFirstFrameSent = true;
+          this.isFirstFrame = false;
+        } else {
+          // 后续帧
+          const status = isLastFrame ? 2 : 1;
+
+          this.ws.send(JSON.stringify({
+            data: {
+              status,
+              format: 'audio/L16;rate=16000',
+              encoding: 'raw',
+              audio: this._arrayBufferToBase64(frameBuffer)
+            }
+          }));
+        }
+      } catch (e) {
+        if (this.enableConsoleLog) {
+          console.warn('[语音识别] 发送音频数据失败:', e);
+        }
+      }
+    };
+
+    // 录音停止回调
+    this.recorder.onStop = () => {
+      this.isRecorderRunning = false;
+      if (this.enableConsoleLog) {
+        console.log('[语音识别] 录音停止');
+      }
+    };
+  }
+
+  /**
+   * 启动录音
+   */
+  async _startRecording() {
+    if (!this.recorder) {
+      throw new Error('RecorderManager未初始化');
+    }
+
+    // 如果已经在运行,不重复启动
+    if (this.isRecorderRunning) {
+      if (this.enableConsoleLog) {
+        console.log('[语音识别] 录音已在运行,跳过启动');
+      }
+      return;
+    }
+
+    try {
+      await this.recorder.start({
+        sampleRate: 16000,
+        frameSize: 1280,
+        arrayBufferType: 'short16'
+      });
+    } catch (error) {
+      throw new Error(`启动录音失败: ${error.message}`);
+    }
+  }
+
+  /**
+   * VAD语音活动检测
+   * @param {ArrayBuffer} frameBuffer - 音频帧数据
+   */
+  _performVAD(frameBuffer) {
+    // 将ArrayBuffer转换为Float32Array进行VAD分析
+    const int16Array = new Int16Array(frameBuffer);
+    const floatArray = new Float32Array(int16Array.length);
+
+    // 转换为浮点数并计算音量
+    let sum = 0;
+    for (let i = 0; i < int16Array.length; i++) {
+      floatArray[i] = int16Array[i] / 32768.0;
+      sum += Math.abs(floatArray[i]);
+    }
+
+    const avgVolume = sum / floatArray.length;
+    const isSpeaking = avgVolume > this.silenceThreshold;
+    const now = Date.now();
+
+    if (isSpeaking) {
+      // 检测到说话
+      this.lastSpeechTime = now;
+
+      if (!this.isSpeechDetected) {
+        // 说话开始
+        this.isSpeechDetected = true;
+        this.speechStartTime = now;
+      }
+
+      // 清除静音定时器
+      if (this.silenceTimer) {
+        clearTimeout(this.silenceTimer);
+        this.silenceTimer = null;
+      }
+    } else if (this.isSpeechDetected) {
+      // 检测到静音
+      if (!this.silenceTimer) {
+        this.silenceTimer = setTimeout(() => {
+          const speechDuration = this.lastSpeechTime - this.speechStartTime;
+
+          // 只有说话时长超过最小时长才发送结束帧
+          if (speechDuration >= this.minSpeechDuration) {
+            this._sendEndFrame();
+          }
+
+          this.isSpeechDetected = false;
+          this.silenceTimer = null;
+        }, this.silenceDuration);
+      }
+    }
+  }
+
+  async _connectWebSocket() {
+    return new Promise((resolve, reject) => {
+      this.ws = new WebSocket(this.wsUrl);
+
+      this.ws.onopen = () => {
+        this.isConnected = true;
+        this.isReconnecting = false;
+        if (this.enableConsoleLog) {
+          console.log('[语音识别] WebSocket连接成功');
+        }
+        this._emit('connected');
+
+        // 🔥 代理服务器模式下,不需要客户端发送首帧参数
+        // 代理服务器会自动发送,这里直接 resolve
+        resolve();
+      };
+
+      this.ws.onmessage = async (event) => {
+        try {
+          let data = event.data;
+
+          if (data instanceof Blob) {
+            data = await data.text();
+          }
+
+          const response = JSON.parse(data);
+          this._handleWebSocketMessage(response);
+        } catch (error) {
+          if (this.enableConsoleLog) {
+            console.error('[语音识别] 处理消息失败:', error);
+          }
+        }
+      };
+
+      this.ws.onerror = (error) => {
+        this.isConnected = false;
+
+        const errorObj = new Error('WebSocket连接错误');
+        this._emit('error', { error: errorObj });
+
+        reject(error);
+      };
+
+      this.ws.onclose = (event) => {
+        this.isConnected = false;
+
+        if (this.enableConsoleLog) {
+          console.log(`[语音识别] WebSocket连接关闭: ${event.code} ${event.reason}`);
+        }
+
+        this._emit('disconnected');
+        
+        // 重置等待/首帧标志，确保重连后能够正确发送首帧
+        this.waitingForFinalResult = false;
+        this.isFirstFrame = true;
+        this.hasFirstFrameSent = false;
+
+        // 清理已有的重连定时器
+        if (this.reconnectTimer) {
+          clearTimeout(this.reconnectTimer);
+          this.reconnectTimer = null;
+        }
+
+        // 如果仍在监听，并且允许连续识别/自动重连，则尝试重连
+        if (this.isListening && (this.continuousMode || this.autoReconnect)) {
+          this.isReconnecting = true;
+
+          // 1005 常见于服务端异常关闭，稍加延迟再重连
+          const initialDelay = event.code === 1005 ? 500 : 200;
+          if (this.enableConsoleLog) {
+            console.log(`[语音识别] ${initialDelay}ms 后尝试重连`);
+          }
+
+          this.reconnectTimer = setTimeout(async () => {
+            try {
+              await this._ensureWebSocketConnection();
+              this.isReconnecting = false;
+              if (this.enableConsoleLog) {
+                console.log('[语音识别] 重连成功');
+              }
+            } catch (error) {
+              this.isReconnecting = false;
+              if (this.enableConsoleLog) {
+                console.error('[语音识别] 重连失败:', error);
+              }
+              // 简单的二次重试，避免陷入无穷循环
+              const nextDelay = Math.min(initialDelay * 2, 5000);
+              if (this.isListening) {
+                if (this.enableConsoleLog) {
+                  console.log(`[语音识别] ${nextDelay}ms 后再次尝试重连`);
+                }
+                this.reconnectTimer = setTimeout(async () => {
+                  try {
+                    await this._ensureWebSocketConnection();
+                    this.isReconnecting = false;
+                    if (this.enableConsoleLog) {
+                      console.log('[语音识别] 重连成功');
+                    }
+                  } catch (e2) {
+                    if (this.enableConsoleLog) {
+                      console.error('[语音识别] 重连再次失败:', e2);
+                    }
+                    this.isReconnecting = false;
+                  }
+                }, nextDelay);
+              }
+            }
+          }, initialDelay);
+        } else {
+          // 非连续模式或未在监听，触发结束事件
+          const result = this.getResult();
+          this._emit('end', result);
+        }
+
+        // 清空 ws 引用
+        this.ws = null;
+      };
+    });
+  }
+
+  _handleWebSocketMessage(response) {
+    if (response.error) {
+      const error = new Error(`语音识别错误: ${response.error}`);
+      this._emit('error', { error });
+      return;
+    }
+
+    if (!response.data) {
+      return;
+    }
+
+    const { data } = response;
+
+    if (data.result) {
+      const nowTs = Date.now();
+
+      if (this.lastResultTs && (nowTs - this.lastResultTs > this.segmentResetGapMs)) {
+        this.resultText = '';
+        this.resultTextTemp = '';
+        this.lastNonPunctText = '';
+      }
+
+      const result = data.result;
+      const ws = result.ws || [];
+      let str = '';
+
+      for (let i = 0; i < ws.length; i++) {
+        if (ws[i].cw && ws[i].cw[0] && ws[i].cw[0].w) {
+          str += ws[i].cw[0].w;
+        }
+      }
+
+      if (!this.resultText) this.resultText = '';
+      if (!this.resultTextTemp) this.resultTextTemp = '';
+
+      if (result.pgs) {
+        if (result.pgs === 'apd') {
+          this.resultText = this.resultTextTemp;
+        }
+        this.resultTextTemp = this.resultText + str;
+      } else {
+        this.resultText += str;
+      }
+
+      const currentText = (this.resultTextTemp || this.resultText || '').trim();
+      const punctOnlyRegex = /^[\s.,!?;:…,。?!;:""-]*$/;
+
+      let effectiveText = currentText;
+      const isFinalStatus = data.status === 2;
+      // 过滤纯语气词（嗯/呃/啊/哦/唔/诶/哎/哇/哼/咦 等）
+      const isFillerOnly = this._isFillerOnly(effectiveText);
+
+      if (isFinalStatus && (punctOnlyRegex.test(effectiveText) || !effectiveText || isFillerOnly)) {
+        const fallback = this.lastNonPunctText || '';
+        if (fallback) {
+          effectiveText = fallback;
+        }
+      }
+
+      const hasEffectiveContent = effectiveText && !punctOnlyRegex.test(effectiveText) && !isFillerOnly;
+
+      if (hasEffectiveContent && !isFinalStatus) {
+        this.lastNonPunctText = effectiveText;
+      }
+
+      if (hasEffectiveContent || (isFinalStatus && this.lastNonPunctText)) {
+        if (isFinalStatus) {
+          const finalText = hasEffectiveContent ? effectiveText : this.lastNonPunctText;
+          this.result.final = finalText;
+          this.result.interim = '';
+
+          this._emit('result', {
+            final: finalText,
+            interim: '',
+            isFinal: true,
+            confidence: result.confidence || 0,
+          });
+
+          this.resultText = '';
+          this.resultTextTemp = '';
+          this.lastNonPunctText = '';
+
+          // 🔥 收到最终结果后,重置状态
+          this._resetAfterFinalResult();
+
+          // 🔥 如果是连续识别模式,立即重连（不等待语音活动）
+          if (this.continuousMode && this.isListening) {
+            if (this.enableConsoleLog) {
+              console.log('[语音识别] 收到最终结果,准备重连');
+            }
+            
+            // 🔥 延迟重连,避免立即重连导致的问题
+            // 先关闭当前连接
+            if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+              try {
+                this.ws.close();
+              } catch (e) { /* ignore */ }
+            }
+            
+            // 🔥 延迟 200ms 后重连,给服务端足够的时间处理关闭
+            this.isReconnecting = true;
+            this.reconnectTimer = setTimeout(async () => {
+              try {
+                if (this.enableConsoleLog) {
+                  console.log('[语音识别] 开始重连');
+                }
+                
+                // 重置首帧标记
+                this.isFirstFrame = true;
+                this.hasFirstFrameSent = false;
+                
+                // 重新连接
+                await this._ensureWebSocketConnection();
+                
+                if (this.enableConsoleLog) {
+                  console.log('[语音识别] 重连成功,准备接收下一轮识别');
+                }
+              } catch (error) {
+                if (this.enableConsoleLog) {
+                  console.error('[语音识别] 重连失败:', error);
+                }
+                // 重连失败,标记为非重连状态,等待下次尝试
+                this.isReconnecting = false;
+              }
+            }, 200);
+          } else {
+            // 非连续模式,调用 stop
+            setTimeout(() => {
+              this.stop();
+            }, 50);
+          }
+        } else {
+          this.result.interim = effectiveText;
+          this.result.final = '';
+
+          this._emit('result', {
+            final: '',
+            interim: effectiveText,
+            isFinal: false,
+            confidence: result.confidence || 0,
+          });
+        }
+
+        this.lastResultTs = nowTs;
+      }
+    }
+  }
+
+  /**
+   * ArrayBuffer转Base64
+   */
+  _arrayBufferToBase64(buffer) {
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    for (let i = 0; i < bytes.byteLength; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    return btoa(binary);
+  }
+
+  /**
+   * 检测是否为纯语气词（填充词），用于过滤“嗯嗯嗯/呃呃”等低价值识别结果
+   */
+  _isFillerOnly(text = '') {
+    const t = String(text)
+      .replace(/[\s.,!?;:…,。?!;:""-]/g, '') // 去除空白和标点
+      .trim();
+    if (!t) return false;
+    // 常见中文口头填充词集合
+    const fillerRegex = /^[嗯呃啊哦唔诶喔哎哇哼咦呀哈嘿呵]+$/;
+    return fillerRegex.test(t);
+  }
+
+  /**
+   * 发送结束帧并等待最终结果
+   */
+  _sendEndFrame() {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+
+    // 如果已经在等待最终结果,避免重复发送
+    if (this.waitingForFinalResult) {
+      return;
+    }
+
+    try {
+      // 发送结束帧,触发服务器返回最终结果
+      this.ws.send(JSON.stringify({
+        data: {
+          status: 2,
+          format: 'audio/L16;rate=16000',
+          encoding: 'raw',
+          audio: ''
+        }
+      }));
+
+      // 🔥 标记等待最终结果,暂停 VAD 检测
+      this.waitingForFinalResult = true;
+
+      if (this.enableConsoleLog) {
+        console.log('[语音识别] 发送结束帧,等待最终结果');
+      }
+
+    } catch (e) {
+      this.waitingForFinalResult = false;
+      if (this.enableConsoleLog) {
+        console.warn('[语音识别] 发送结束帧失败:', e);
+      }
+    }
+  }
+
+  /**
+   * 收到最终结果后重置状态
+   */
+  _resetAfterFinalResult() {
+    // 清除超时定时器
+    if (this.finalResultTimeout) {
+      clearTimeout(this.finalResultTimeout);
+      this.finalResultTimeout = null;
+    }
+
+    // 重置等待标志
+    this.waitingForFinalResult = false;
+
+    // 重置识别状态,准备下一轮
+    this.isFirstFrame = true;
+    this.hasFirstFrameSent = false;
+    this.resultText = '';
+    this.resultTextTemp = '';
+    this.lastNonPunctText = '';
+
+    if (this.enableConsoleLog) {
+      console.log('[语音识别] 状态已重置,准备下一轮识别');
+    }
+  }
+
+  /**
+   * 重置结果
+   */
+  _resetResult() {
+    this.result = {
+      final: '',
+      interim: '',
+      confidence: 0,
+      alternatives: [],
+    };
+    this.resultText = '';
+    this.resultTextTemp = '';
+    this.lastNonPunctText = '';
+    this.lastResultTs = 0;
+
+    // 重置 VAD 状态
+    this.isSpeechDetected = false;
+    this.lastSpeechTime = 0;
+    this.speechStartTime = 0;
+    this.waitingForFinalResult = false;
+    this.hasFirstFrameSent = false;
+
+    if (this.silenceTimer) {
+      clearTimeout(this.silenceTimer);
+      this.silenceTimer = null;
+    }
+
+    if (this.finalResultTimeout) {
+      clearTimeout(this.finalResultTimeout);
+      this.finalResultTimeout = null;
+    }
+
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+  }
+
+  /**
+   * 触发事件
+   */
+  _emit(event, data = {}) {
+    if (this.listeners.has(event)) {
+      this.listeners.get(event).forEach(callback => {
+        try {
+          callback(data);
+        } catch (error) {
+          if (this.enableConsoleLog) {
+            console.error(`[语音识别] 事件 ${event} 回调执行失败:`, error);
+          }
+        }
+      });
+    }
+  }
+}
+
+export default VoiceRecognizer;
